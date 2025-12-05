@@ -18,6 +18,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
@@ -28,6 +29,9 @@ import (
 const (
 	API_URL = "https://your-api-endpoint.com/process" // Replace with your actual API URL
 )
+
+// Global client variable to access in event handlers
+var waClient *whatsmeow.Client
 
 // PostmanCollection represents the structure of a Postman collection
 type PostmanCollection struct {
@@ -194,24 +198,26 @@ func main() {
 	// Setup logging
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
-	// Initialize SQLite store
+	// Initialize SQLite store - note: no context parameter
 	ctx := context.Background()
 	container, err := sqlstore.New(ctx, "sqlite3", "file:whatsapp.db?_foreign_keys=on", dbLog)
 	if err != nil {
 		panic(err)
 	}
 
-	deviceStore, err := container.GetFirstDevice(ctx)
+	// Get first device - note: no context parameter
+	ctx2 := context.Background()
+	deviceStore, err := container.GetFirstDevice(ctx2)
 	if err != nil {
 		panic(err)
 	}
 
 	clientLog := waLog.Stdout("Client", "INFO", true)
-	client := whatsmeow.NewClient(deviceStore, clientLog)
-	client.AddEventHandler(handleEvents)
+	waClient = whatsmeow.NewClient(deviceStore, clientLog)
+	waClient.AddEventHandler(handleEvents)
 
 	// Handle login (QR code or existing session)
-	err = handleLogin(client)
+	err = handleLogin(waClient)
 	if err != nil {
 		panic(err)
 	}
@@ -224,7 +230,7 @@ func main() {
 	<-c
 
 	fmt.Println("\n🛑 Shutting down...")
-	client.Disconnect()
+	waClient.Disconnect()
 }
 
 // handleLogin manages the login process - either via QR code (first time) or existing session
@@ -340,7 +346,7 @@ func handleMessage(evt *events.Message) {
 		}
 
 		if strings.HasPrefix(text, "/generate") {
-			sendMessage(evt, "Please send a Postman collection JSON file.")
+			sendMessage(evt.Info.Chat, "Please send a Postman collection JSON file.")
 		}
 		return
 	}
@@ -351,18 +357,17 @@ func handleMessage(evt *events.Message) {
 
 		// Check if it's a JSON file
 		if strings.HasSuffix(strings.ToLower(doc.GetFileName()), ".json") {
-			handlePostmanCollection(evt, doc)
+			handlePostmanCollection(evt.Info.Chat, doc)
 		}
 	}
 }
 
-func handlePostmanCollection(evt *events.Message, doc *waProto.DocumentMessage) {
-	client := evt.Client
-
+func handlePostmanCollection(chatJID types.JID, doc *waProto.DocumentMessage) {
 	// Download the document
-	data, err := client.Download(doc)
+	ctx := context.Background()
+	data, err := waClient.Download(ctx, doc)
 	if err != nil {
-		sendMessage(evt, fmt.Sprintf("Failed to download file: %v", err))
+		sendMessage(chatJID, fmt.Sprintf("Failed to download file: %v", err))
 		return
 	}
 
@@ -370,7 +375,7 @@ func handlePostmanCollection(evt *events.Message, doc *waProto.DocumentMessage) 
 	var collection PostmanCollection
 	err = json.Unmarshal(data, &collection)
 	if err != nil {
-		sendMessage(evt, fmt.Sprintf("Failed to parse Postman collection: %v", err))
+		sendMessage(chatJID, fmt.Sprintf("Failed to parse Postman collection: %v", err))
 		return
 	}
 
@@ -385,14 +390,14 @@ func handlePostmanCollection(evt *events.Message, doc *waProto.DocumentMessage) 
 
 	reqBody, err := json.Marshal(apiReq)
 	if err != nil {
-		sendMessage(evt, fmt.Sprintf("Failed to prepare API request: %v", err))
+		sendMessage(chatJID, fmt.Sprintf("Failed to prepare API request: %v", err))
 		return
 	}
 
 	// Send to API
 	resp, err := http.Post(API_URL, "application/json", strings.NewReader(string(reqBody)))
 	if err != nil {
-		sendMessage(evt, fmt.Sprintf("Failed to send to API: %v", err))
+		sendMessage(chatJID, fmt.Sprintf("Failed to send to API: %v", err))
 		return
 	}
 	defer resp.Body.Close()
@@ -400,13 +405,13 @@ func handlePostmanCollection(evt *events.Message, doc *waProto.DocumentMessage) 
 	// Read response
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		sendMessage(evt, fmt.Sprintf("Failed to read API response: %v", err))
+		sendMessage(chatJID, fmt.Sprintf("Failed to read API response: %v", err))
 		return
 	}
 
 	// Send response back to user
 	responseMsg := fmt.Sprintf("✅ *API Response (Status: %d)*\n\n```%s```", resp.StatusCode, string(respBody))
-	sendMessage(evt, responseMsg)
+	sendMessage(chatJID, responseMsg)
 }
 
 func convertToHTML(collection PostmanCollection) string {
@@ -469,10 +474,13 @@ func escapeForJSON(s string) string {
 	return s
 }
 
-func sendMessage(evt *events.Message, text string) {
+func sendMessage(chatJID types.JID, text string) {
 	msg := &waProto.Message{
 		Conversation: proto.String(text),
 	}
 
-	evt.Client.SendMessage(context.Background(), evt.Info.Chat, msg)
+	_, err := waClient.SendMessage(context.Background(), chatJID, msg)
+	if err != nil {
+		fmt.Printf("Error sending message: %v\n", err)
+	}
 }
