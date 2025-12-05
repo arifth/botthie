@@ -16,7 +16,7 @@ import (
 	"github.com/mdp/qrterminal/v3"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -61,8 +61,16 @@ type PostmanHeader struct {
 }
 
 type PostmanBody struct {
-	Mode string `json:"mode"`
-	Raw  string `json:"raw,omitempty"`
+	Mode       string                `json:"mode"`
+	Raw        string                `json:"raw,omitempty"`
+	FormData   []PostmanFormDataItem `json:"formdata,omitempty"`
+	URLEncoded []PostmanFormDataItem `json:"urlencoded,omitempty"`
+}
+
+type PostmanFormDataItem struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	Type  string `json:"type"`
 }
 
 type PostmanURL struct {
@@ -83,11 +91,21 @@ type TemplateData struct {
 }
 
 type RequestData struct {
-	Name    string
-	Method  string
-	URL     string
-	Headers []PostmanHeader
-	Body    string
+	Name       string
+	Method     string
+	URL        string
+	Headers    []PostmanHeader
+	Body       string
+	BodyFields []BodyField
+	BodyMode   string
+}
+
+type BodyField struct {
+	Field       string
+	Type        string
+	Mandatory   string
+	Description string
+	Number      int
 }
 
 const htmlTemplate = `<!DOCTYPE html>
@@ -157,6 +175,53 @@ const htmlTemplate = `<!DOCTYPE html>
         .header-item {
             padding: 3px 0;
         }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            background: white;
+        }
+        table th {
+            background: #4a5568;
+            color: white;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+        table td {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+        table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        table tr:hover {
+            background: #e9ecef;
+        }
+        .type-badge {
+            background: #667eea;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        .mandatory-yes {
+            background: #f56565;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+        .mandatory-no {
+            background: #48bb78;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -183,9 +248,41 @@ const htmlTemplate = `<!DOCTYPE html>
         </div>
         {{end}}
         
-        {{if .Body}}
+        {{if .BodyFields}}
         <div class="section">
-            <span class="label">Body:</span>
+            <span class="label">Request Body Fields:</span>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 5%;">No.</th>
+                        <th style="width: 20%;">Field</th>
+                        <th style="width: 15%;">Type</th>
+                        <th style="width: 10%;">Mandatory</th>
+                        <th style="width: 50%;">Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .BodyFields}}
+                    <tr>
+                        <td style="text-align: center;">{{.Number}}</td>
+                        <td><strong>{{.Field}}</strong></td>
+                        <td><span class="type-badge">{{.Type}}</span></td>
+                        <td style="text-align: center;">
+                            {{if eq .Mandatory "Yes"}}
+                            <span class="mandatory-yes">{{.Mandatory}}</span>
+                            {{else}}
+                            <span class="mandatory-no">{{.Mandatory}}</span>
+                            {{end}}
+                        </td>
+                        <td>{{.Description}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else if .Body}}
+        <div class="section">
+            <span class="label">Body ({{.BodyMode}}):</span>
             <pre>{{.Body}}</pre>
         </div>
         {{end}}
@@ -198,15 +295,15 @@ func main() {
 	// Setup logging
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
-	// Initialize SQLite store - note: no context parameter
 	ctx := context.Background()
+	// Initialize SQLite store - note: no context parameter
 	container, err := sqlstore.New(ctx, "sqlite3", "file:whatsapp.db?_foreign_keys=on", dbLog)
 	if err != nil {
 		panic(err)
 	}
 
-	// Get first device - note: no context parameter
 	ctx2 := context.Background()
+	// Get first device - note: no context parameter
 	deviceStore, err := container.GetFirstDevice(ctx2)
 	if err != nil {
 		panic(err)
@@ -362,9 +459,10 @@ func handleMessage(evt *events.Message) {
 	}
 }
 
-func handlePostmanCollection(chatJID types.JID, doc *waProto.DocumentMessage) {
-	// Download the document
+func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage) {
+
 	ctx := context.Background()
+	// Download the document
 	data, err := waClient.Download(ctx, doc)
 	if err != nil {
 		sendMessage(chatJID, fmt.Sprintf("Failed to download file: %v", err))
@@ -381,6 +479,23 @@ func handlePostmanCollection(chatJID types.JID, doc *waProto.DocumentMessage) {
 
 	// Convert to HTML
 	html := convertToHTML(collection)
+
+	// Write HTML to file in current directory
+	filename := sanitizeFilename(collection.Info.Name) + ".html"
+	err = writeHTMLToFile(filename, html)
+	if err != nil {
+		sendMessage(chatJID, fmt.Sprintf("Failed to write HTML file: %v", err))
+		return
+	}
+
+	sendMessage(chatJID, fmt.Sprintf("📄 HTML file saved as: %s", filename))
+
+	// Send HTML file back to WhatsApp
+	err = sendHTMLFile(chatJID, filename)
+	if err != nil {
+		sendMessage(chatJID, fmt.Sprintf("Failed to send HTML file: %v", err))
+		return
+	}
 
 	// Prepare API request
 	escapedHTML := escapeForJSON(html)
@@ -430,8 +545,45 @@ func convertToHTML(collection PostmanCollection) string {
 			Headers: item.Request.Header,
 		}
 
-		if item.Request.Body != nil && item.Request.Body.Raw != "" {
-			reqData.Body = item.Request.Body.Raw
+		// Parse body based on mode
+		if item.Request.Body != nil {
+			reqData.BodyMode = item.Request.Body.Mode
+
+			// Check if body is JSON with fields
+			if item.Request.Body.Mode == "raw" && item.Request.Body.Raw != "" {
+				// Try to parse as JSON to extract fields
+				bodyFields := parseJSONBodyFields(item.Request.Body.Raw)
+				if len(bodyFields) > 0 {
+					reqData.BodyFields = bodyFields
+				} else {
+					// If not valid JSON or no fields, just show raw
+					reqData.Body = item.Request.Body.Raw
+				}
+			} else if item.Request.Body.Mode == "formdata" && len(item.Request.Body.FormData) > 0 {
+				// Parse form-data fields
+				for idx, field := range item.Request.Body.FormData {
+					reqData.BodyFields = append(reqData.BodyFields, BodyField{
+						Number:      idx + 1,
+						Field:       field.Key,
+						Type:        determineType(field.Value),
+						Mandatory:   "No",
+						Description: makeReadable(field.Key),
+					})
+				}
+			} else if item.Request.Body.Mode == "urlencoded" && len(item.Request.Body.URLEncoded) > 0 {
+				// Parse URL-encoded fields
+				for idx, field := range item.Request.Body.URLEncoded {
+					reqData.BodyFields = append(reqData.BodyFields, BodyField{
+						Number:      idx + 1,
+						Field:       field.Key,
+						Type:        determineType(field.Value),
+						Mandatory:   "No",
+						Description: makeReadable(field.Key),
+					})
+				}
+			} else if item.Request.Body.Raw != "" {
+				reqData.Body = item.Request.Body.Raw
+			}
 		}
 
 		data.Requests = append(data.Requests, reqData)
@@ -450,6 +602,108 @@ func convertToHTML(collection PostmanCollection) string {
 	}
 
 	return buf.String()
+}
+
+// parseJSONBodyFields parses JSON body and extracts field names with their types
+func parseJSONBodyFields(rawBody string) []BodyField {
+	var jsonData map[string]interface{}
+	err := json.Unmarshal([]byte(rawBody), &jsonData)
+	if err != nil {
+		return nil
+	}
+
+	var fields []BodyField
+	index := 1
+	for key, value := range jsonData {
+		fields = append(fields, BodyField{
+			Number:      index,
+			Field:       key,
+			Type:        determineType(value),
+			Mandatory:   "No", // Default to No, can be customized
+			Description: generateDescription(key, value),
+		})
+		index++
+	}
+
+	return fields
+}
+
+// generateDescription generates a description based on field name and value
+func generateDescription(fieldName string, value interface{}) string {
+	// Convert field name from camelCase/snake_case to readable format
+	readable := makeReadable(fieldName)
+
+	// Generate smart description based on type
+	valueType := determineType(value)
+
+	switch valueType {
+	case "string":
+		if strVal, ok := value.(string); ok && strVal != "" {
+			return fmt.Sprintf("%s (example: %s)", readable, strVal)
+		}
+		return readable
+	case "integer", "number":
+		return fmt.Sprintf("%s value", readable)
+	case "boolean":
+		return fmt.Sprintf("%s flag", readable)
+	case "array":
+		return fmt.Sprintf("List of %s", readable)
+	case "object":
+		return fmt.Sprintf("%s object details", readable)
+	default:
+		return readable
+	}
+}
+
+// makeReadable converts field names to readable format
+func makeReadable(fieldName string) string {
+	// Replace underscores with spaces
+	result := strings.ReplaceAll(fieldName, "_", " ")
+
+	// Add space before capital letters (camelCase)
+	var readable strings.Builder
+	for i, r := range result {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			readable.WriteRune(' ')
+		}
+		if i == 0 {
+			readable.WriteRune(r)
+		} else {
+			readable.WriteRune(r)
+		}
+	}
+
+	// Capitalize first letter
+	finalResult := readable.String()
+	if len(finalResult) > 0 {
+		finalResult = strings.ToUpper(string(finalResult[0])) + finalResult[1:]
+	}
+
+	return finalResult
+}
+
+// determineType determines the data type from a value
+func determineType(value interface{}) string {
+	if value == nil {
+		return "null"
+	}
+
+	switch v := value.(type) {
+	case string:
+		return "string"
+	case int, int8, int16, int32, int64:
+		return "integer"
+	case float32, float64:
+		return "number"
+	case bool:
+		return "boolean"
+	case []interface{}:
+		return "array"
+	case map[string]interface{}:
+		return "object"
+	default:
+		return fmt.Sprintf("%T", v)
+	}
 }
 
 func extractURL(urlInterface interface{}) string {
@@ -475,7 +729,7 @@ func escapeForJSON(s string) string {
 }
 
 func sendMessage(chatJID types.JID, text string) {
-	msg := &waProto.Message{
+	msg := &waE2E.Message{
 		Conversation: proto.String(text),
 	}
 
@@ -483,4 +737,81 @@ func sendMessage(chatJID types.JID, text string) {
 	if err != nil {
 		fmt.Printf("Error sending message: %v\n", err)
 	}
+}
+
+// writeHTMLToFile writes the HTML content to a file in the current directory
+func writeHTMLToFile(filename, content string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(content)
+	if err != nil {
+		return fmt.Errorf("failed to write content: %w", err)
+	}
+
+	fmt.Printf("✅ HTML written to file: %s\n", filename)
+	return nil
+}
+
+// sanitizeFilename removes invalid characters from filename
+func sanitizeFilename(name string) string {
+	// Replace invalid characters with underscore
+	invalid := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
+	result := name
+
+	for _, char := range invalid {
+		result = strings.ReplaceAll(result, char, "_")
+	}
+
+	// Remove leading/trailing spaces
+	result = strings.TrimSpace(result)
+
+	// If name is empty after sanitization, use default
+	if result == "" {
+		result = "postman_collection"
+	}
+
+	return result
+}
+
+// sendHTMLFile sends the HTML file back to WhatsApp
+func sendHTMLFile(chatJID types.JID, filename string) error {
+	// Read the file
+	fileData, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("failed to read HTML file: %w", err)
+	}
+
+	// Upload the file to WhatsApp servers
+	uploaded, err := waClient.Upload(context.Background(), fileData, whatsmeow.MediaDocument)
+	if err != nil {
+		return fmt.Errorf("failed to upload file: %w", err)
+	}
+
+	// Create document message
+	msg := &waE2E.Message{
+		DocumentMessage: &waE2E.DocumentMessage{
+			URL:           proto.String(uploaded.URL),
+			DirectPath:    proto.String(uploaded.DirectPath),
+			MediaKey:      uploaded.MediaKey,
+			Mimetype:      proto.String("text/html"),
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(fileData))),
+			FileName:      proto.String(filename),
+			Caption:       proto.String("📄 Generated HTML Documentation"),
+		},
+	}
+
+	// Send the message
+	_, err = waClient.SendMessage(context.Background(), chatJID, msg)
+	if err != nil {
+		return fmt.Errorf("failed to send document message: %w", err)
+	}
+
+	fmt.Printf("✅ HTML file sent to WhatsApp: %s\n", filename)
+	return nil
 }
