@@ -2,6 +2,7 @@ package util
 
 import (
 	"os"
+	"strings"
 )
 
 func GetDataFromTemplate(path string) (string, error) {
@@ -10,5 +11,6 @@ func GetDataFromTemplate(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	cleansed := strings.ReplaceAll(string(data), "\n", "")
+	return string(cleansed), nil
 }

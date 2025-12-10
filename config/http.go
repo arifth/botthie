@@ -41,6 +41,8 @@ func NewClient(cfg *Config) *Client {
 
 	// Create resty client
 	client := resty.New()
+	client.SetHeader("Content-Type", "application/json")
+	client.SetDebug(true)
 
 	// Configure base URL
 	if cfg.BaseURL != "" {

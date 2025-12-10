@@ -1,3 +1,5 @@
 whatsapp.db
 *.html
 *.db
+.env
+

@@ -1,18 +1,19 @@
 package main
 
 import (
+	"arifthalhah/waBot/model"
+	"arifthalhah/waBot/usecase"
 	"arifthalhah/waBot/util"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"html/template"
-	"io"
-	"net/http"
+	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"text/template"
 
 	"github.com/mdp/qrterminal/v3"
 	"github.com/skip2/go-qrcode"
@@ -24,6 +25,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -110,6 +112,11 @@ type BodyField struct {
 }
 
 func main() {
+
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
 	dataTempl, err := util.GetDataFromTemplate("./template/apiBook.html")
 
 	if err != nil {
@@ -307,52 +314,72 @@ func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage, temp
 	html := convertToHTML(collection, templ)
 
 	// Write HTML to file in current directory
-	filename := sanitizeFilename(collection.Info.Name) + ".html"
-	err = writeHTMLToFile(filename, html)
-	if err != nil {
-		sendMessage(chatJID, fmt.Sprintf("Failed to write HTML file: %v", err))
-		return
-	}
+	// filename := sanitizeFilename(collection.Info.Name) + ".html"
+	// err = writeHTMLToFile(filename, html)
+	// if err != nil {
+	// 	sendMessage(chatJID, fmt.Sprintf("Failed to write HTML file: %v", err))
+	// 	return
+	// }
 
-	sendMessage(chatJID, fmt.Sprintf("📄 HTML file saved as: %s", filename))
+	// sendMessage(chatJID, fmt.Sprintf("📄 HTML file saved as: %s", filename))
 
 	// Send HTML file back to WhatsApp
-	err = sendHTMLFile(chatJID, filename)
-	if err != nil {
-		sendMessage(chatJID, fmt.Sprintf("Failed to send HTML file: %v", err))
-		return
-	}
+	// err = sendHTMLFile(chatJID, filename)
+	// if err != nil {
+	// 	sendMessage(chatJID, fmt.Sprintf("Failed to send HTML file: %v", err))
+	// 	return
+	// }
 
 	// Prepare API request
-	escapedHTML := escapeForJSON(html)
-	apiReq := APIRequest{
-		HTMLContent: escapedHTML,
+	// TODO : map model to request body
+	// escapedHTML := escapeForJSON(html)
+
+	bodyReq := model.ConfluencePage{
+		Type:      "page",
+		Title:     "Test",
+		Ancestors: []model.Ancestor{{ID: os.Getenv("PARENT_ID")}},
+		Space:     model.Space{Key: os.Getenv("SPACE_KEY")},
+		Body: model.BodyWrapper{
+			Storage: model.Storage{
+				Value:          string(html),
+				Representation: "storage",
+			},
+		},
 	}
 
-	reqBody, err := json.Marshal(apiReq)
+	//TODO: map value to struct
+	reqBody, err := json.Marshal(bodyReq)
+	if err != nil {
+		fmt.Println("error when marshalling req body", err)
+	}
+	resConflu, err := usecase.PostToConfluence(string(reqBody))
 	if err != nil {
 		sendMessage(chatJID, fmt.Sprintf("Failed to prepare API request: %v", err))
 		return
 	}
 
-	// Send to API
-	resp, err := http.Post(API_URL, "application/json", strings.NewReader(string(reqBody)))
-	if err != nil {
-		sendMessage(chatJID, fmt.Sprintf("Failed to send to API: %v", err))
-		return
-	}
-	defer resp.Body.Close()
-
-	// Read response
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		sendMessage(chatJID, fmt.Sprintf("Failed to read API response: %v", err))
-		return
+	if resConflu.IsSuccess() {
+		sendMessage(chatJID, "sukses create page to confluence ")
 	}
 
-	// Send response back to user
-	responseMsg := fmt.Sprintf("✅ *API Response (Status: %d)*\n\n```%s```", resp.StatusCode, string(respBody))
-	sendMessage(chatJID, responseMsg)
+	// // Send to API
+	// resp, err := http.Post(API_URL, "application/json", strings.NewReader(string(reqBody)))
+	// if err != nil {
+	// 	sendMessage(chatJID, fmt.Sprintf("Failed to send to API: %v", err))
+	// 	return
+	// }
+	// defer resp.Body.Close()
+
+	// // Read response
+	// respBody, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	sendMessage(chatJID, fmt.Sprintf("Failed to read API response: %v", err))
+	// 	return
+	// }
+
+	// // Send response back to user
+	// responseMsg := fmt.Sprintf("✅ *API Response (Status: %d)*\n\n```%s```", resp.StatusCode, string(respBody))
+	// sendMessage(chatJID, responseMsg)
 }
 
 func convertToHTML(collection PostmanCollection, dataTempl string) string {
@@ -416,18 +443,15 @@ func convertToHTML(collection PostmanCollection, dataTempl string) string {
 	}
 
 	// Parse and execute template
-	tmpl, err := template.New("postman").Parse(dataTempl)
-	if err != nil {
-		return fmt.Sprintf("Template parsing error: %v", err)
-	}
+	t := template.Must(template.New("postman").Parse(dataTempl))
 
 	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, data)
+	err := t.Execute(&buf, data)
 	if err != nil {
 		return fmt.Sprintf("Template execution error: %v", err)
 	}
 
-	return buf.String()
+	return string(buf)
 }
 
 // parseJSONBodyFields parses JSON body and extracts field names with their types
