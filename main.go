@@ -1,6 +1,7 @@
 package main
 
 import (
+	"arifthalhah/waBot/util"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -108,190 +109,13 @@ type BodyField struct {
 	Number      int
 }
 
-const htmlTemplate = `<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>{{.CollectionName}}</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f9f9f9;
-        }
-        h1 {
-            color: #333;
-            border-bottom: 2px solid #ddd;
-            padding-bottom: 10px;
-        }
-        .request {
-            border: 1px solid #ddd;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 5px;
-            background-color: white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .request h2 {
-            margin-top: 0;
-            color: #555;
-        }
-        .method {
-            font-weight: bold;
-            color: #fff;
-            padding: 5px 10px;
-            border-radius: 3px;
-            display: inline-block;
-            margin-right: 10px;
-        }
-        .GET { background: #61affe; }
-        .POST { background: #49cc90; }
-        .PUT { background: #fca130; }
-        .DELETE { background: #f93e3e; }
-        .PATCH { background: #50e3c2; }
-        .section {
-            margin: 15px 0;
-        }
-        .label {
-            font-weight: bold;
-            color: #333;
-            display: block;
-            margin-bottom: 5px;
-        }
-        pre {
-            background: #f5f5f5;
-            padding: 12px;
-            border-radius: 3px;
-            overflow-x: auto;
-            border-left: 3px solid #61affe;
-            margin: 5px 0;
-        }
-        code {
-            background: #f0f0f0;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-        }
-        .header-item {
-            padding: 3px 0;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-            background: white;
-        }
-        table th {
-            background: #4a5568;
-            color: white;
-            padding: 10px;
-            text-align: left;
-            font-weight: bold;
-        }
-        table td {
-            padding: 10px;
-            border: 1px solid #ddd;
-        }
-        table tr:nth-child(even) {
-            background: #f8f9fa;
-        }
-        table tr:hover {
-            background: #e9ecef;
-        }
-        .type-badge {
-            background: #667eea;
-            color: white;
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 0.85em;
-            font-weight: bold;
-        }
-        .mandatory-yes {
-            background: #f56565;
-            color: white;
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 0.85em;
-            font-weight: bold;
-        }
-        .mandatory-no {
-            background: #48bb78;
-            color: white;
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 0.85em;
-            font-weight: bold;
-        }
-    </style>
-</head>
-<body>
-    <h1>{{.CollectionName}}</h1>
-    {{range .Requests}}
-    <div class="request">
-        <h2>{{.Name}}</h2>
-        
-        <div class="section">
-            <span class="label">Method:</span>
-            <span class="method {{.Method}}">{{.Method}}</span>
-        </div>
-        
-        <div class="section">
-            <span class="label">URL:</span>
-            <code>{{.URL}}</code>
-        </div>
-        
-        {{if .Headers}}
-        <div class="section">
-            <span class="label">Headers:</span>
-            <pre>{{range .Headers}}{{.Key}}: {{.Value}}
-{{end}}</pre>
-        </div>
-        {{end}}
-        
-        {{if .BodyFields}}
-        <div class="section">
-            <span class="label">Request Body Fields:</span>
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width: 5%;">No.</th>
-                        <th style="width: 20%;">Field</th>
-                        <th style="width: 15%;">Type</th>
-                        <th style="width: 10%;">Mandatory</th>
-                        <th style="width: 50%;">Description</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range .BodyFields}}
-                    <tr>
-                        <td style="text-align: center;">{{.Number}}</td>
-                        <td><strong>{{.Field}}</strong></td>
-                        <td><span class="type-badge">{{.Type}}</span></td>
-                        <td style="text-align: center;">
-                            {{if eq .Mandatory "Yes"}}
-                            <span class="mandatory-yes">{{.Mandatory}}</span>
-                            {{else}}
-                            <span class="mandatory-no">{{.Mandatory}}</span>
-                            {{end}}
-                        </td>
-                        <td>{{.Description}}</td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-        </div>
-        {{else if .Body}}
-        <div class="section">
-            <span class="label">Body ({{.BodyMode}}):</span>
-            <pre>{{.Body}}</pre>
-        </div>
-        {{end}}
-    </div>
-    {{end}}
-</body>
-</html>`
-
 func main() {
+	dataTempl, err := util.GetDataFromTemplate("./template/apiBook.html")
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	// Setup logging
 	dbLog := waLog.Stdout("Database", "INFO", true)
 
@@ -311,7 +135,9 @@ func main() {
 
 	clientLog := waLog.Stdout("Client", "INFO", true)
 	waClient = whatsmeow.NewClient(deviceStore, clientLog)
-	waClient.AddEventHandler(handleEvents)
+	waClient.AddEventHandler(func(evt interface{}) {
+		handleEvents(evt, dataTempl)
+	})
 
 	// Handle login (QR code or existing session)
 	err = handleLogin(waClient)
@@ -420,14 +246,14 @@ func saveQRCodeImage(code string) error {
 	return nil
 }
 
-func handleEvents(evt interface{}) {
+func handleEvents(evt interface{}, templ string) {
 	switch v := evt.(type) {
 	case *events.Message:
-		handleMessage(v)
+		handleMessage(v, templ)
 	}
 }
 
-func handleMessage(evt *events.Message) {
+func handleMessage(evt *events.Message, templ string) {
 	// Skip messages sent by bot itself
 	if evt.Info.IsFromMe {
 		return
@@ -454,12 +280,12 @@ func handleMessage(evt *events.Message) {
 
 		// Check if it's a JSON file
 		if strings.HasSuffix(strings.ToLower(doc.GetFileName()), ".json") {
-			handlePostmanCollection(evt.Info.Chat, doc)
+			handlePostmanCollection(evt.Info.Chat, doc, templ)
 		}
 	}
 }
 
-func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage) {
+func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage, templ string) {
 
 	ctx := context.Background()
 	// Download the document
@@ -478,7 +304,7 @@ func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage) {
 	}
 
 	// Convert to HTML
-	html := convertToHTML(collection)
+	html := convertToHTML(collection, templ)
 
 	// Write HTML to file in current directory
 	filename := sanitizeFilename(collection.Info.Name) + ".html"
@@ -529,7 +355,7 @@ func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage) {
 	sendMessage(chatJID, responseMsg)
 }
 
-func convertToHTML(collection PostmanCollection) string {
+func convertToHTML(collection PostmanCollection, dataTempl string) string {
 	// Prepare template data
 	data := TemplateData{
 		CollectionName: collection.Info.Name,
@@ -590,7 +416,7 @@ func convertToHTML(collection PostmanCollection) string {
 	}
 
 	// Parse and execute template
-	tmpl, err := template.New("postman").Parse(htmlTemplate)
+	tmpl, err := template.New("postman").Parse(dataTempl)
 	if err != nil {
 		return fmt.Sprintf("Template parsing error: %v", err)
 	}
