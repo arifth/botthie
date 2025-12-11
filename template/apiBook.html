@@ -1,31 +1,30 @@
-   
 <div>
     <h1>{{.CollectionName}}</h1>
     {{range .Requests}}
-    <div class="request">
-        <h3>{{.Name}}</h2>
+    <div>
+        <h3>{{.Name}}</h3>
         
-        <div class="section">
-            <span class="label">Method:</span>
-            <span class="method {{.Method}}">{{.Method}}</span>
+        <div>
+            <span>Method:</span>
+            <span>{{.Method}}</span>
         </div>
         
-        <div class="section">
-            <span class="label">URL:</span>
+        <div>
+            <span>URL:</span>
             <code>{{.URL}}</code>
         </div>
         
         {{if .Headers}}
-        <div class="section">
-            <span class="label">Headers:</span>
+        <div>
+            <span>Headers:</span>
             <pre>{{range .Headers}}{{.Key}}: {{.Value}}
 {{end}}</pre>
         </div>
         {{end}}
         
         {{if .BodyFields}}
-        <div class="section">
-            <span class="label">Request Body Fields:</span>
+        <div>
+            <span>Request Body Fields:</span>
             <table>
                 <thead>
                     <tr>
@@ -41,12 +40,12 @@
                     <tr>
                         <td style="text-align: center;">{{.Number}}</td>
                         <td><strong>{{.Field}}</strong></td>
-                        <td><span class="type-badge">{{.Type}}</span></td>
+                        <td><span>{{.Type}}</span></td>
                         <td style="text-align: center;">
                             {{if eq .Mandatory "Yes"}}
-                            <span class="mandatory-yes">{{.Mandatory}}</span>
+                            <span>{{.Mandatory}}</span>
                             {{else}}
-                            <span class="mandatory-no">{{.Mandatory}}</span>
+                            <span>{{.Mandatory}}</span>
                             {{end}}
                         </td>
                         <td>{{.Description}}</td>
@@ -56,8 +55,8 @@
             </table>
         </div>
         {{else if .Body}}
-        <div class="section">
-            <span class="label">Body ({{.BodyMode}}):</span>
+        <div>
+            <span>Body ({{.BodyMode}}):</span>
             <pre>{{.Body}}</pre>
         </div>
         {{end}}

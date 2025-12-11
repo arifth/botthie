@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"text/template"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/mdp/qrterminal/v3"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
@@ -27,10 +28,6 @@ import (
 
 	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"
-)
-
-const (
-	API_URL = "https://your-api-endpoint.com/process" // Replace with your actual API URL
 )
 
 // Global client variable to access in event handlers
@@ -109,6 +106,43 @@ type BodyField struct {
 	Mandatory   string
 	Description string
 	Number      int
+}
+
+type Links struct {
+	Webui string `json:"webui"`
+	Self  string `json:"self"`
+}
+
+type Space struct {
+	ID    int    `json:"id"`
+	Key   string `json:"key"`
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Links Links  `json:"_links"`
+}
+
+type LinksS struct {
+	Links
+}
+
+type ConfluenceResponse struct {
+	Space Space  `json:"space"`
+	Links LinksS `json: "_links`
+}
+
+type Response struct {
+	StatusCode int    `json:"statusCode"`
+	Data       Data   `json:"data"`
+	Message    string `json:"message"`
+	Reason     string `json:"reason"`
+}
+
+type Data struct {
+	Authorized            bool          `json:"authorized"`
+	Valid                 bool          `json:"valid"`
+	AllowedInReadOnlyMode bool          `json:"allowedInReadOnlyMode"`
+	Errors                []interface{} `json:"errors"`
+	Successful            bool          `json:"successful"`
 }
 
 func main() {
@@ -292,6 +326,24 @@ func handleMessage(evt *events.Message, templ string) {
 	}
 }
 
+func getSpaceLinks(resp *resty.Response) (*Links, error) {
+	var confluenceResp ConfluenceResponse
+	err := json.Unmarshal(resp.Body(), &confluenceResp)
+	if err != nil {
+		return nil, err
+	}
+	return &confluenceResp.Links.Links, nil
+}
+
+func getResponseError(resp *resty.Response) (*string, error) {
+	var confluenceRespErr Response
+	err := json.Unmarshal(resp.Body(), &confluenceRespErr)
+	if err != nil {
+		return nil, err
+	}
+	return &confluenceRespErr.Reason, nil
+}
+
 func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage, templ string) {
 
 	ctx := context.Background()
@@ -336,7 +388,7 @@ func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage, temp
 
 	bodyReq := model.ConfluencePage{
 		Type:      "page",
-		Title:     "Test",
+		Title:     collection.Info.Name,
 		Ancestors: []model.Ancestor{{ID: os.Getenv("PARENT_ID")}},
 		Space:     model.Space{Key: os.Getenv("SPACE_KEY")},
 		Body: model.BodyWrapper{
@@ -358,28 +410,23 @@ func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage, temp
 		return
 	}
 
-	if resConflu.IsSuccess() {
-		sendMessage(chatJID, "sukses create page to confluence ")
+	link, err := getSpaceLinks(&resConflu)
+	url := fmt.Sprintf("https://confluence.bri.co.id/display/OOAPD/%s", link.Self)
+
+	if err != nil {
+		fmt.Println("error while parsing links from response", err)
 	}
 
-	// // Send to API
-	// resp, err := http.Post(API_URL, "application/json", strings.NewReader(string(reqBody)))
-	// if err != nil {
-	// 	sendMessage(chatJID, fmt.Sprintf("Failed to send to API: %v", err))
-	// 	return
-	// }
-	// defer resp.Body.Close()
+	if resConflu.IsSuccess() {
+		sendMessage(chatJID, fmt.Sprintf("sukses create page to confluence,berikut link nya \n %s", url))
+	}
 
-	// // Read response
-	// respBody, err := io.ReadAll(resp.Body)
-	// if err != nil {
-	// 	sendMessage(chatJID, fmt.Sprintf("Failed to read API response: %v", err))
-	// 	return
-	// }
+	e, _ := getResponseError(&resConflu)
 
-	// // Send response back to user
-	// responseMsg := fmt.Sprintf("✅ *API Response (Status: %d)*\n\n```%s```", resp.StatusCode, string(respBody))
-	// sendMessage(chatJID, responseMsg)
+	if resConflu.IsError() {
+		sendMessage(chatJID, fmt.Sprintf("Gagal menambahkan page \n %s", e))
+
+	}
 }
 
 func convertToHTML(collection PostmanCollection, dataTempl string) string {
@@ -443,15 +490,18 @@ func convertToHTML(collection PostmanCollection, dataTempl string) string {
 	}
 
 	// Parse and execute template
-	t := template.Must(template.New("postman").Parse(dataTempl))
+	t, err := template.New("postman").Parse(dataTempl)
+	if err != nil {
+		log.Fatal("error while parsing template", err)
+	}
 
 	var buf bytes.Buffer
-	err := t.Execute(&buf, data)
+	err = t.Execute(&buf, data)
 	if err != nil {
 		return fmt.Sprintf("Template execution error: %v", err)
 	}
 
-	return string(buf)
+	return buf.String()
 }
 
 // parseJSONBodyFields parses JSON body and extracts field names with their types

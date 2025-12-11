@@ -45,6 +45,8 @@ func PostToConfluence(data interface{}) (res resty.Response, err error) {
 		Headers: hdrs,
 	}
 
+	fmt.Println(data)
+
 	var clt = config.NewClient(&conf)
 	var resConflu, _ = clt.Post("/content/", data)
 	// if err != nil {
