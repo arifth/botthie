@@ -1,7 +1,7 @@
 package usecase
 
 import (
-	"arifthalhah/waBot/config"
+	"github.com/arifth/botthie/config"
 	"fmt"
 	"os"
 

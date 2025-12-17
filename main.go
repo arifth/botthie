@@ -1,9 +1,6 @@
 package main
 
 import (
-	"arifthalhah/waBot/model"
-	"arifthalhah/waBot/usecase"
-	"arifthalhah/waBot/util"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,6 +11,10 @@ import (
 	"strings"
 	"syscall"
 	"text/template"
+
+	"github.com/arifth/botthie/model"
+	"github.com/arifth/botthie/usecase"
+	"github.com/arifth/botthie/util"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/mdp/qrterminal/v3"
@@ -32,118 +33,6 @@ import (
 
 // Global client variable to access in event handlers
 var waClient *whatsmeow.Client
-
-// PostmanCollection represents the structure of a Postman collection
-type PostmanCollection struct {
-	Info struct {
-		Name   string `json:"name"`
-		Schema string `json:"schema"`
-	} `json:"info"`
-	Item []PostmanItem `json:"item"`
-}
-
-type PostmanItem struct {
-	Name    string         `json:"name"`
-	Request PostmanRequest `json:"request"`
-}
-
-type PostmanRequest struct {
-	Method string          `json:"method"`
-	Header []PostmanHeader `json:"header"`
-	Body   *PostmanBody    `json:"body,omitempty"`
-	URL    interface{}     `json:"url"`
-}
-
-type PostmanHeader struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-	Type  string `json:"type"`
-}
-
-type PostmanBody struct {
-	Mode       string                `json:"mode"`
-	Raw        string                `json:"raw,omitempty"`
-	FormData   []PostmanFormDataItem `json:"formdata,omitempty"`
-	URLEncoded []PostmanFormDataItem `json:"urlencoded,omitempty"`
-}
-
-type PostmanFormDataItem struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-	Type  string `json:"type"`
-}
-
-type PostmanURL struct {
-	Raw  string   `json:"raw"`
-	Host []string `json:"host,omitempty"`
-	Path []string `json:"path,omitempty"`
-}
-
-// APIRequest represents the request to send to your API
-type APIRequest struct {
-	HTMLContent string `json:"request"`
-}
-
-// TemplateData holds data for HTML template rendering
-type TemplateData struct {
-	CollectionName string
-	Requests       []RequestData
-}
-
-type RequestData struct {
-	Name       string
-	Method     string
-	URL        string
-	Headers    []PostmanHeader
-	Body       string
-	BodyFields []BodyField
-	BodyMode   string
-}
-
-type BodyField struct {
-	Field       string
-	Type        string
-	Mandatory   string
-	Description string
-	Number      int
-}
-
-type Links struct {
-	Webui string `json:"webui"`
-	Self  string `json:"self"`
-}
-
-type Space struct {
-	ID    int    `json:"id"`
-	Key   string `json:"key"`
-	Name  string `json:"name"`
-	Type  string `json:"type"`
-	Links Links  `json:"_links"`
-}
-
-type LinksS struct {
-	Links
-}
-
-type ConfluenceResponse struct {
-	Space Space  `json:"space"`
-	Links LinksS `json: "_links`
-}
-
-type Response struct {
-	StatusCode int    `json:"statusCode"`
-	Data       Data   `json:"data"`
-	Message    string `json:"message"`
-	Reason     string `json:"reason"`
-}
-
-type Data struct {
-	Authorized            bool          `json:"authorized"`
-	Valid                 bool          `json:"valid"`
-	AllowedInReadOnlyMode bool          `json:"allowedInReadOnlyMode"`
-	Errors                []interface{} `json:"errors"`
-	Successful            bool          `json:"successful"`
-}
 
 func main() {
 
@@ -326,9 +215,9 @@ func handleMessage(evt *events.Message, templ string) {
 	}
 }
 
-func getSpaceLinks(resp *resty.Response) (*Links, error) {
-	var confluenceResp ConfluenceResponse
-	err := json.Unmarshal(resp.Body(), &confluenceResp)
+func getSpaceLinks(resp *resty.Response) (*model.Links, error) {
+	var confluenceResp model.ConfluenceResponse
+	err := json.Unmarshal(resp.Body(), confluenceResp)
 	if err != nil {
 		return nil, err
 	}
@@ -336,8 +225,8 @@ func getSpaceLinks(resp *resty.Response) (*Links, error) {
 }
 
 func getResponseError(resp *resty.Response) (*string, error) {
-	var confluenceRespErr Response
-	err := json.Unmarshal(resp.Body(), &confluenceRespErr)
+	var confluenceRespErr model.Response
+	err := json.Unmarshal(resp.Body(), confluenceRespErr)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +244,7 @@ func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage, temp
 	}
 
 	// Parse Postman collection
-	var collection PostmanCollection
+	var collection model.PostmanCollection
 	err = json.Unmarshal(data, &collection)
 	if err != nil {
 		sendMessage(chatJID, fmt.Sprintf("Failed to parse Postman collection: %v", err))
@@ -429,16 +318,16 @@ func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage, temp
 	}
 }
 
-func convertToHTML(collection PostmanCollection, dataTempl string) string {
+func convertToHTML(collection model.PostmanCollection, dataTempl string) string {
 	// Prepare template data
-	data := TemplateData{
+	data := model.TemplateData{
 		CollectionName: collection.Info.Name,
-		Requests:       make([]RequestData, 0),
+		Requests:       make([]model.RequestData, 0),
 	}
 
 	// Extract request data
 	for _, item := range collection.Item {
-		reqData := RequestData{
+		reqData := model.RequestData{
 			Name:    item.Name,
 			Method:  item.Request.Method,
 			URL:     extractURL(item.Request.URL),
@@ -462,7 +351,7 @@ func convertToHTML(collection PostmanCollection, dataTempl string) string {
 			} else if item.Request.Body.Mode == "formdata" && len(item.Request.Body.FormData) > 0 {
 				// Parse form-data fields
 				for idx, field := range item.Request.Body.FormData {
-					reqData.BodyFields = append(reqData.BodyFields, BodyField{
+					reqData.BodyFields = append(reqData.BodyFields, model.BodyField{
 						Number:      idx + 1,
 						Field:       field.Key,
 						Type:        determineType(field.Value),
@@ -473,7 +362,7 @@ func convertToHTML(collection PostmanCollection, dataTempl string) string {
 			} else if item.Request.Body.Mode == "urlencoded" && len(item.Request.Body.URLEncoded) > 0 {
 				// Parse URL-encoded fields
 				for idx, field := range item.Request.Body.URLEncoded {
-					reqData.BodyFields = append(reqData.BodyFields, BodyField{
+					reqData.BodyFields = append(reqData.BodyFields, model.BodyField{
 						Number:      idx + 1,
 						Field:       field.Key,
 						Type:        determineType(field.Value),
@@ -505,17 +394,17 @@ func convertToHTML(collection PostmanCollection, dataTempl string) string {
 }
 
 // parseJSONBodyFields parses JSON body and extracts field names with their types
-func parseJSONBodyFields(rawBody string) []BodyField {
+func parseJSONBodyFields(rawBody string) []model.BodyField {
 	var jsonData map[string]interface{}
 	err := json.Unmarshal([]byte(rawBody), &jsonData)
 	if err != nil {
 		return nil
 	}
 
-	var fields []BodyField
+	var fields []model.BodyField
 	index := 1
 	for key, value := range jsonData {
-		fields = append(fields, BodyField{
+		fields = append(fields, model.BodyField{
 			Number:      index,
 			Field:       key,
 			Type:        determineType(value),
@@ -618,16 +507,6 @@ func extractURL(urlInterface interface{}) string {
 	return ""
 }
 
-func escapeForJSON(s string) string {
-	// Escape double quotes and backslashes for JSON string
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	s = strings.ReplaceAll(s, "\"", "\\\"")
-	s = strings.ReplaceAll(s, "\n", "\\n")
-	s = strings.ReplaceAll(s, "\r", "\\r")
-	s = strings.ReplaceAll(s, "\t", "\\t")
-	return s
-}
-
 func sendMessage(chatJID types.JID, text string) {
 	msg := &waE2E.Message{
 		Conversation: proto.String(text),
@@ -637,81 +516,4 @@ func sendMessage(chatJID types.JID, text string) {
 	if err != nil {
 		fmt.Printf("Error sending message: %v\n", err)
 	}
-}
-
-// writeHTMLToFile writes the HTML content to a file in the current directory
-func writeHTMLToFile(filename, content string) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
-	}
-	defer file.Close()
-
-	_, err = file.WriteString(content)
-	if err != nil {
-		return fmt.Errorf("failed to write content: %w", err)
-	}
-
-	fmt.Printf("✅ HTML written to file: %s\n", filename)
-	return nil
-}
-
-// sanitizeFilename removes invalid characters from filename
-func sanitizeFilename(name string) string {
-	// Replace invalid characters with underscore
-	invalid := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
-	result := name
-
-	for _, char := range invalid {
-		result = strings.ReplaceAll(result, char, "_")
-	}
-
-	// Remove leading/trailing spaces
-	result = strings.TrimSpace(result)
-
-	// If name is empty after sanitization, use default
-	if result == "" {
-		result = "postman_collection"
-	}
-
-	return result
-}
-
-// sendHTMLFile sends the HTML file back to WhatsApp
-func sendHTMLFile(chatJID types.JID, filename string) error {
-	// Read the file
-	fileData, err := os.ReadFile(filename)
-	if err != nil {
-		return fmt.Errorf("failed to read HTML file: %w", err)
-	}
-
-	// Upload the file to WhatsApp servers
-	uploaded, err := waClient.Upload(context.Background(), fileData, whatsmeow.MediaDocument)
-	if err != nil {
-		return fmt.Errorf("failed to upload file: %w", err)
-	}
-
-	// Create document message
-	msg := &waE2E.Message{
-		DocumentMessage: &waE2E.DocumentMessage{
-			URL:           proto.String(uploaded.URL),
-			DirectPath:    proto.String(uploaded.DirectPath),
-			MediaKey:      uploaded.MediaKey,
-			Mimetype:      proto.String("text/html"),
-			FileEncSHA256: uploaded.FileEncSHA256,
-			FileSHA256:    uploaded.FileSHA256,
-			FileLength:    proto.Uint64(uint64(len(fileData))),
-			FileName:      proto.String(filename),
-			Caption:       proto.String("📄 Generated HTML Documentation"),
-		},
-	}
-
-	// Send the message
-	_, err = waClient.SendMessage(context.Background(), chatJID, msg)
-	if err != nil {
-		return fmt.Errorf("failed to send document message: %w", err)
-	}
-
-	fmt.Printf("✅ HTML file sent to WhatsApp: %s\n", filename)
-	return nil
 }
