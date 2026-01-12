@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -41,6 +42,9 @@ func NewClient(cfg *Config) *Client {
 
 	// Create resty client
 	client := resty.New()
+	username := os.Getenv("USERNAME")
+	password := os.Getenv("PASSWORD")
+	client.SetBasicAuth(username, password)
 	client.SetHeader("Content-Type", "application/json")
 	client.SetDebug(true)
 

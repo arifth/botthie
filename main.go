@@ -300,6 +300,9 @@ func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage, temp
 	}
 
 	link, err := getSpaceLinks(&resConflu)
+	if err != nil {
+		fmt.Println("error while getting links from response", err)
+	}
 	url := fmt.Sprintf("https://confluence.bri.co.id/display/OOAPD/%s", link.Self)
 
 	if err != nil {

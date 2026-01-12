@@ -1,9 +1,10 @@
 package usecase
 
 import (
-	"github.com/arifth/botthie/config"
 	"fmt"
 	"os"
+
+	"github.com/arifth/botthie/config"
 
 	"github.com/go-resty/resty/v2"
 )
