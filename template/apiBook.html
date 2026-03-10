@@ -1,65 +1,95 @@
 <div>
     <h1>{{.CollectionName}}</h1>
-    {{range .Requests}}
     <div>
-        <h3>{{.Name}}</h3>
-        
+        <h3>{{.Requests.Name}}</h3>
+
         <div>
             <span>Method:</span>
-            <span>{{.Method}}</span>
+            <span>{{.Requests.Method}}</span>
         </div>
-        
+
+        <h1>
+            <strong>UR(Mandatory)<br/>
+            </strong>
+        </h1>
+        <table class="relative-table wrapped" style="width: 560.0px;">
+            <colgroup>
+                <col style="width: 0.0px;"/>
+                <col style="width: 0.0px;"/>
+            </colgroup>
+            <thead>
+            <tr>
+                <th style="text-align: left;">
+                    <p>Env</p>
+                </th>
+                <th style="text-align: left;">
+                    <p>URL</p>
+                </th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td style="text-align: left;">Private Open</td>
+                <td style="text-align: left;">
+                    <br/>
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align: left;">Close</td>
+                <td style="text-align: left;">
+        <span style="color: rgb(33,33,33);">
+          <a href="{{.Requests.URL}}">"{{.Requests.URL}}"</a>
+        </span>
+                </td>
+            </tr>
+            </tbody>
+        </table>
         <div>
             <span>URL:</span>
-            <code>{{.URL}}</code>
+            <code></code>
         </div>
-        
-        {{if .Headers}}
+
+        {{if .Requests.Headers}}
         <div>
             <span>Headers:</span>
-            <pre>{{range .Headers}}{{.Key}}: {{.Value}}
+            <pre>{{range .Requests.Headers}}{{.Key}}: {{.Value}}
 {{end}}</pre>
         </div>
         {{end}}
-        
-        {{if .BodyFields}}
+
+        {{if .Requests.BodyFields}}
         <div>
             <span>Request Body Fields:</span>
             <table>
                 <thead>
-                    <tr>
-                        <th style="width: 5%;">No.</th>
-                        <th style="width: 20%;">Field</th>
-                        <th style="width: 15%;">Type</th>
-                        <th style="width: 10%;">Mandatory</th>
-                        <th style="width: 50%;">Description</th>
-                    </tr>
+                <tr>
+                    <th style="width: 5%;">No.</th>
+                    <th style="width: 20%;">Field</th>
+                    <th style="width: 15%;">Type</th>
+                    <th style="width: 10%;">Mandatory</th>
+                    <th style="width: 50%;">Description</th>
+                </tr>
                 </thead>
                 <tbody>
-                    {{range .BodyFields}}
-                    <tr>
-                        <td style="text-align: center;">{{.Number}}</td>
-                        <td><strong>{{.Field}}</strong></td>
-                        <td><span>{{.Type}}</span></td>
-                        <td style="text-align: center;">
-                            {{if eq .Mandatory "Yes"}}
-                            <span>{{.Mandatory}}</span>
-                            {{else}}
-                            <span>{{.Mandatory}}</span>
-                            {{end}}
-                        </td>
-                        <td>{{.Description}}</td>
-                    </tr>
-                    {{end}}
+                {{range .Requests.BodyFields}}
+                <tr>
+                    <td style="text-align: center;">{{.Number}}</td>
+                    <td><strong>{{.Field}}</strong></td>
+                    <td><span>{{.Type}}</span></td>
+                    <td style="text-align: center;">
+                        <span>{{.Mandatory}}</span>
+                    </td>
+                    <td>{{.Description}}</td>
+                </tr>
+                {{end}}
                 </tbody>
             </table>
         </div>
-        {{else if .Body}}
+        {{else if .Requests.Body}}
         <div>
-            <span>Body ({{.BodyMode}}):</span>
-            <pre>{{.Body}}</pre>
+            <span>Body:</span>
+            <pre>{{.Requests.Body}}</pre>
         </div>
         {{end}}
     </div>
-    {{end}}
 </div>
