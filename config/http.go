@@ -118,7 +118,7 @@ func (c *Client) SetAuthToken(token string) *Client {
 }
 
 // SetHeader sets a custom header for all requests
-func (c *Client) SetHeader(key, value string) *Client {
+func (c *Client) setheader(key, value string) *Client {
 	c.resty.SetHeader(key, value)
 	return c
 }

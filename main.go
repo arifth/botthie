@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"text/template"
 
 	"github.com/arifth/botthie/model"
 	"github.com/arifth/botthie/usecase"
@@ -91,13 +89,7 @@ func handleLogin(client *whatsmeow.Client) error {
 	// Check if already logged in (has session)
 	if client.Store.ID == nil {
 		// First time login - need QR code
-		fmt.Println("🔐 First time login detected. Please scan the QR code with WhatsApp.")
-		fmt.Println("📱 Steps:")
-		fmt.Println("   1. Open WhatsApp on your phone")
-		fmt.Println("   2. Go to Settings > Linked Devices")
-		fmt.Println("   3. Tap 'Link a Device'")
-		fmt.Println("   4. Scan the QR code below\n")
-
+		usecase.FirstAttempt()
 		return loginWithQRCode(client)
 	} else {
 		// Already have session, just connect
@@ -207,10 +199,12 @@ func handleMessage(evt *events.Message, templ string) {
 	// Handle document messages (JSON files)
 	if msg.GetDocumentMessage() != nil {
 		doc := msg.GetDocumentMessage()
-
+		//instantiate new dependency per request
+		ctx := context.Background()
+		uc := usecase.NewUsecase(ctx, waClient, evt.Info.Chat)
 		// Check if it's a JSON file
 		if strings.HasSuffix(strings.ToLower(doc.GetFileName()), ".json") {
-			handlePostmanCollection(evt.Info.Chat, doc, templ)
+			handlePostmanCollection(uc, evt.Info.Chat, doc, templ)
 		}
 	}
 }
@@ -233,8 +227,7 @@ func getResponseError(resp *resty.Response) (*string, error) {
 	return &confluenceRespErr.Reason, nil
 }
 
-func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage, templ string) {
-
+func handlePostmanCollection(uc *usecase.Usecase, chatJID types.JID, doc *waE2E.DocumentMessage, templ string) {
 	ctx := context.Background()
 	// Download the document
 	data, err := waClient.Download(ctx, doc)
@@ -251,264 +244,49 @@ func handlePostmanCollection(chatJID types.JID, doc *waE2E.DocumentMessage, temp
 		return
 	}
 
-	// Convert to HTML
-	html := convertToHTML(collection, templ)
-
-	// Write HTML to file in current directory
-	// filename := sanitizeFilename(collection.Info.Name) + ".html"
-	// err = writeHTMLToFile(filename, html)
-	// if err != nil {
-	// 	sendMessage(chatJID, fmt.Sprintf("Failed to write HTML file: %v", err))
-	// 	return
-	// }
-
-	// sendMessage(chatJID, fmt.Sprintf("📄 HTML file saved as: %s", filename))
-
-	// Send HTML file back to WhatsApp
-	// err = sendHTMLFile(chatJID, filename)
-	// if err != nil {
-	// 	sendMessage(chatJID, fmt.Sprintf("Failed to send HTML file: %v", err))
-	// 	return
-	// }
-
-	// Prepare API request
-	// TODO : map model to request body
-	// escapedHTML := escapeForJSON(html)
-
-	bodyReq := model.ConfluencePage{
-		Type:      "page",
-		Title:     collection.Info.Name,
-		Ancestors: []model.Ancestor{{ID: os.Getenv("PARENT_ID")}},
-		Space:     model.Space{Key: os.Getenv("SPACE_KEY")},
-		Body: model.BodyWrapper{
-			Storage: model.Storage{
-				Value:          string(html),
-				Representation: "storage",
-			},
-		},
-	}
-
-	//TODO: map value to struct
-	reqBody, err := json.Marshal(bodyReq)
-	if err != nil {
-		fmt.Println("error when marshalling req body", err)
-	}
-	resConflu, err := usecase.PostToConfluence(string(reqBody))
-	if err != nil {
-		sendMessage(chatJID, fmt.Sprintf("Failed to prepare API request: %v", err))
+	valid := util.Validate(collection)
+	if !valid {
+		errorMsg := "Collection Postman tidak valid, mohon sesuaikan dengan template berikut"
+		err := usecase.SendDocumentAndImage(waClient, chatJID, ".env", errorMsg)
+		if err != nil {
+			return
+		}
+		//sendMessage(chatJID, fmt.Sprintf("Invalid Postman collection: %v", err))
 		return
 	}
 
-	link, err := getSpaceLinks(&resConflu)
+	_, err = uc.PostBulkToConfluence(collection, templ, uc)
 	if err != nil {
-		fmt.Println("error while getting links from response", err)
-	}
-	url := fmt.Sprintf("https://confluence.bri.co.id/display/OOAPD/%s", link.Self)
-
-	if err != nil {
-		fmt.Println("error while parsing links from response", err)
+		uc.SendMessageAll(uc, "error sending postman collection")
 	}
 
-	if resConflu.IsSuccess() {
-		sendMessage(chatJID, fmt.Sprintf("sukses create page to confluence,berikut link nya \n %s", url))
-	}
-
-	e, _ := getResponseError(&resConflu)
-
-	if resConflu.IsError() {
-		sendMessage(chatJID, fmt.Sprintf("Gagal menambahkan page \n %s", e))
-
-	}
-}
-
-func convertToHTML(collection model.PostmanCollection, dataTempl string) string {
-	// Prepare template data
-	data := model.TemplateData{
-		CollectionName: collection.Info.Name,
-		Requests:       make([]model.RequestData, 0),
-	}
-
-	// Extract request data
-	for _, item := range collection.Item {
-		reqData := model.RequestData{
-			Name:    item.Name,
-			Method:  item.Request.Method,
-			URL:     extractURL(item.Request.URL),
-			Headers: item.Request.Header,
-		}
-
-		// Parse body based on mode
-		if item.Request.Body != nil {
-			reqData.BodyMode = item.Request.Body.Mode
-
-			// Check if body is JSON with fields
-			if item.Request.Body.Mode == "raw" && item.Request.Body.Raw != "" {
-				// Try to parse as JSON to extract fields
-				bodyFields := parseJSONBodyFields(item.Request.Body.Raw)
-				if len(bodyFields) > 0 {
-					reqData.BodyFields = bodyFields
-				} else {
-					// If not valid JSON or no fields, just show raw
-					reqData.Body = item.Request.Body.Raw
-				}
-			} else if item.Request.Body.Mode == "formdata" && len(item.Request.Body.FormData) > 0 {
-				// Parse form-data fields
-				for idx, field := range item.Request.Body.FormData {
-					reqData.BodyFields = append(reqData.BodyFields, model.BodyField{
-						Number:      idx + 1,
-						Field:       field.Key,
-						Type:        determineType(field.Value),
-						Mandatory:   "No",
-						Description: makeReadable(field.Key),
-					})
-				}
-			} else if item.Request.Body.Mode == "urlencoded" && len(item.Request.Body.URLEncoded) > 0 {
-				// Parse URL-encoded fields
-				for idx, field := range item.Request.Body.URLEncoded {
-					reqData.BodyFields = append(reqData.BodyFields, model.BodyField{
-						Number:      idx + 1,
-						Field:       field.Key,
-						Type:        determineType(field.Value),
-						Mandatory:   "No",
-						Description: makeReadable(field.Key),
-					})
-				}
-			} else if item.Request.Body.Raw != "" {
-				reqData.Body = item.Request.Body.Raw
-			}
-		}
-
-		data.Requests = append(data.Requests, reqData)
-	}
-
-	// Parse and execute template
-	t, err := template.New("postman").Parse(dataTempl)
-	if err != nil {
-		log.Fatal("error while parsing template", err)
-	}
-
-	var buf bytes.Buffer
-	err = t.Execute(&buf, data)
-	if err != nil {
-		return fmt.Sprintf("Template execution error: %v", err)
-	}
-
-	return buf.String()
-}
-
-// parseJSONBodyFields parses JSON body and extracts field names with their types
-func parseJSONBodyFields(rawBody string) []model.BodyField {
-	var jsonData map[string]interface{}
-	err := json.Unmarshal([]byte(rawBody), &jsonData)
-	if err != nil {
-		return nil
-	}
-
-	var fields []model.BodyField
-	index := 1
-	for key, value := range jsonData {
-		fields = append(fields, model.BodyField{
-			Number:      index,
-			Field:       key,
-			Type:        determineType(value),
-			Mandatory:   "No", // Default to No, can be customized
-			Description: generateDescription(key, value),
-		})
-		index++
-	}
-
-	return fields
-}
-
-// generateDescription generates a description based on field name and value
-func generateDescription(fieldName string, value interface{}) string {
-	// Convert field name from camelCase/snake_case to readable format
-	readable := makeReadable(fieldName)
-
-	// Generate smart description based on type
-	valueType := determineType(value)
-
-	switch valueType {
-	case "string":
-		if strVal, ok := value.(string); ok && strVal != "" {
-			return fmt.Sprintf("%s (example: %s)", readable, strVal)
-		}
-		return readable
-	case "integer", "number":
-		return fmt.Sprintf("%s value", readable)
-	case "boolean":
-		return fmt.Sprintf("%s flag", readable)
-	case "array":
-		return fmt.Sprintf("List of %s", readable)
-	case "object":
-		return fmt.Sprintf("%s object details", readable)
-	default:
-		return readable
-	}
-}
-
-// makeReadable converts field names to readable format
-func makeReadable(fieldName string) string {
-	// Replace underscores with spaces
-	result := strings.ReplaceAll(fieldName, "_", " ")
-
-	// Add space before capital letters (camelCase)
-	var readable strings.Builder
-	for i, r := range result {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			readable.WriteRune(' ')
-		}
-		if i == 0 {
-			readable.WriteRune(r)
-		} else {
-			readable.WriteRune(r)
-		}
-	}
-
-	// Capitalize first letter
-	finalResult := readable.String()
-	if len(finalResult) > 0 {
-		finalResult = strings.ToUpper(string(finalResult[0])) + finalResult[1:]
-	}
-
-	return finalResult
+	//for _, link := range {
+	//
+	//}
+	//
+	//link, err := getSpaceLinks(&resConflu)
+	//if err != nil {
+	//	fmt.Println("error while getting links from response", err)
+	//}
+	//url := fmt.Sprintf("https://confluence.bri.co.id/display/OOAPD/%s", link.Self)
+	//
+	//if err != nil {
+	//	fmt.Println("error while parsing links from response", err)
+	//}
+	//
+	//if resConflu.IsSuccess() {
+	//	sendMessage(chatJID, fmt.Sprintf("sukses create page to confluence,berikut link nya \n %s", url))
+	//}
+	//
+	//e, _ := getResponseError(&resConflu)
+	//
+	//if resConflu.IsError() {
+	//	sendMessage(chatJID, fmt.Sprintf("Gagal menambahkan page \n %s", e))
+	//
+	//}
 }
 
 // determineType determines the data type from a value
-func determineType(value interface{}) string {
-	if value == nil {
-		return "null"
-	}
-
-	switch v := value.(type) {
-	case string:
-		return "string"
-	case int, int8, int16, int32, int64:
-		return "integer"
-	case float32, float64:
-		return "number"
-	case bool:
-		return "boolean"
-	case []interface{}:
-		return "array"
-	case map[string]interface{}:
-		return "object"
-	default:
-		return fmt.Sprintf("%T", v)
-	}
-}
-
-func extractURL(urlInterface interface{}) string {
-	switch v := urlInterface.(type) {
-	case string:
-		return v
-	case map[string]interface{}:
-		if raw, ok := v["raw"].(string); ok {
-			return raw
-		}
-	}
-	return ""
-}
 
 func sendMessage(chatJID types.JID, text string) {
 	msg := &waE2E.Message{

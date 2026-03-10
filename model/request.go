@@ -8,7 +8,7 @@ type APIRequest struct {
 // TemplateData holds data for HTML template rendering
 type TemplateData struct {
 	CollectionName string
-	Requests       []RequestData
+	Requests       RequestData
 }
 
 type RequestData struct {
@@ -47,7 +47,7 @@ type LinksS struct {
 }
 
 type ConfluenceResponse struct {
-	Space Spaces  `json:"space"`
+	Space Spaces `json:"space"`
 	Links LinksS `json: "_links`
 }
 
