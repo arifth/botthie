@@ -4,12 +4,10 @@
         <h3>{{.Requests.Name}}</h3>
 
         <div>
-            <span>Method:</span>
-            <span>{{.Requests.Method}}</span>
+            <h1>Method: {{.Requests.Method}}</h1>
         </div>
-
         <h1>
-            <strong>UR(Mandatory)<br/>
+            <strong>URL(Mandatory)<br/>
             </strong>
         </h1>
         <table class="relative-table wrapped" style="width: 560.0px;">
@@ -45,18 +43,37 @@
             </tbody>
         </table>
         <div>
-            <span>URL:</span>
-            <code></code>
+         <!-- headers -->
         </div>
-
         {{if .Requests.Headers}}
         <div>
-            <span>Headers:</span>
-            <pre>{{range .Requests.Headers}}{{.Key}}: {{.Value}}
-{{end}}</pre>
-        </div>
-        {{end}}
-
+            <h1>Headers</h1>
+        <table class="relative-table wrapped" style="width: 560.0px;">
+            <colgroup>
+                <col style="width: 0.0px;"/>
+                <col style="width: 0.0px;"/>
+            </colgroup>
+            <thead>
+            <tr>
+                <th style="text-align: left;">
+                    <p>Key</p>
+                </th>
+                <th style="text-align: left;">
+                    <p>Value</p>
+                </th>
+            </tr>
+            </thead>
+            <tbody>
+            {{range .Requests.Headers}}{{.Key}}: {{.Value}}
+            <tr>
+                <td style="text-align: left;">{{.Key}}</td>
+                <td style="text-align: left;">
+                    {{.Value}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
         {{if .Requests.BodyFields}}
         <div>
             <span>Request Body Fields:</span>

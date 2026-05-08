@@ -14,7 +14,6 @@ import (
 	"github.com/arifth/botthie/usecase"
 	"github.com/arifth/botthie/util"
 
-	"github.com/go-resty/resty/v2"
 	"github.com/mdp/qrterminal/v3"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
@@ -209,24 +208,6 @@ func handleMessage(evt *events.Message, templ string) {
 	}
 }
 
-func getSpaceLinks(resp *resty.Response) (*model.Links, error) {
-	var confluenceResp model.ConfluenceResponse
-	err := json.Unmarshal(resp.Body(), confluenceResp)
-	if err != nil {
-		return nil, err
-	}
-	return &confluenceResp.Links.Links, nil
-}
-
-func getResponseError(resp *resty.Response) (*string, error) {
-	var confluenceRespErr model.Response
-	err := json.Unmarshal(resp.Body(), confluenceRespErr)
-	if err != nil {
-		return nil, err
-	}
-	return &confluenceRespErr.Reason, nil
-}
-
 func handlePostmanCollection(uc *usecase.Usecase, chatJID types.JID, doc *waE2E.DocumentMessage, templ string) {
 	ctx := context.Background()
 	// Download the document
@@ -259,35 +240,9 @@ func handlePostmanCollection(uc *usecase.Usecase, chatJID types.JID, doc *waE2E.
 	if err != nil {
 		uc.SendMessageAll(uc, "error sending postman collection")
 	}
-
-	//for _, link := range {
-	//
-	//}
-	//
-	//link, err := getSpaceLinks(&resConflu)
-	//if err != nil {
-	//	fmt.Println("error while getting links from response", err)
-	//}
-	//url := fmt.Sprintf("https://confluence.bri.co.id/display/OOAPD/%s", link.Self)
-	//
-	//if err != nil {
-	//	fmt.Println("error while parsing links from response", err)
-	//}
-	//
-	//if resConflu.IsSuccess() {
-	//	sendMessage(chatJID, fmt.Sprintf("sukses create page to confluence,berikut link nya \n %s", url))
-	//}
-	//
-	//e, _ := getResponseError(&resConflu)
-	//
-	//if resConflu.IsError() {
-	//	sendMessage(chatJID, fmt.Sprintf("Gagal menambahkan page \n %s", e))
-	//
-	//}
 }
 
 // determineType determines the data type from a value
-
 func sendMessage(chatJID types.JID, text string) {
 	msg := &waE2E.Message{
 		Conversation: proto.String(text),

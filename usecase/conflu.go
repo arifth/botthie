@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/arifth/botthie/config"
 	"github.com/arifth/botthie/model"
-
 	"github.com/go-resty/resty/v2"
 )
 
@@ -19,31 +19,61 @@ type ListSuccess struct {
 func (Usecase) PostBulkToConfluence(collection model.PostmanCollection, templ string, uc *Usecase) (ListSuccess, error) {
 	// iterate over collection item
 	//TODO : flatten the array
-	list := ListSuccess{}
+	time := time.Now()
 
+	// post parent conflu page
+	bodyReq := model.ConfluencePage{
+		Type:      "page",
+		Title:     "F105" + collection.Info.Name + time.String(),
+		Ancestors: []model.Ancestor{{ID: os.Getenv("PARENT_ID")}},
+		Space:     model.Space{Key: os.Getenv("SPACE_KEY")},
+		Body: model.BodyWrapper{
+			Storage: model.Storage{
+				Value:          "",
+				Representation: "storage",
+			},
+		},
+	}
+	type response struct {
+		ID     string `json:"id"`
+		Type   string `json:"type"`
+		Status string `json:"status"`
+		Title  string `json:"title"`
+	}
+	postParent, err := PostToConfluence(bodyReq, true)
+	var res response
+	err = json.Unmarshal(postParent.Body(), &res)
+	if err != nil {
+		fmt.Println(err)
+	}
+	parentID := res.ID
+	fmt.Println(parentID)
+	if err != nil {
+		fmt.Println(err)
+	}
+	list := ListSuccess{}
 	for _, item := range collection.Item {
 
 		html := uc.ConvertToHTML(collection, templ, item)
 
 		bodyReq := model.ConfluencePage{
 			Type:      "page",
-			Title:     item.Name,
-			Ancestors: []model.Ancestor{{ID: os.Getenv("PARENT_ID")}},
+			Title:     item.Name + time.String(),
+			Ancestors: []model.Ancestor{{ID: parentID}},
 			Space:     model.Space{Key: os.Getenv("SPACE_KEY")},
 			Body: model.BodyWrapper{
 				Storage: model.Storage{
-					Value:          string(html),
+					Value:          html,
 					Representation: "storage",
 				},
 			},
 		}
-
-		//TODO: map value to struct
+		//	//TODO: map value to struct
 		reqBody, err := json.Marshal(bodyReq)
 		if err != nil {
 			fmt.Println("error when marshalling req body", err)
 		}
-		resConflu, err := PostToConfluence(string(reqBody))
+		resConflu, err := PostToConfluence(string(reqBody), false)
 
 		if err != nil {
 			list.error = append(list.error, err.Error())
@@ -56,13 +86,11 @@ func (Usecase) PostBulkToConfluence(collection model.PostmanCollection, templ st
 	return list, nil
 }
 
-func PostToConfluence(data interface{}) (res resty.Response, err error) {
+func PostToConfluence(data interface{}, isParent bool) (res resty.Response, err error) {
 	var baseURL = os.Getenv("BASE_URL")
-	var BASE64 = os.Getenv("BASIC_AUTH")
-	// var hdrs = map[string][string]{"Authorization": fmt.Sprintf("Basic %v",BASE64)}
+	var PAT_TOKEN = os.Getenv("PAT_TOKEN")
 	var hdrs = map[string]string{
-		// Now you don't need the curly braces around the value
-		"Authorization": fmt.Sprintf("Basic %v", BASE64),
+		"Authorization": fmt.Sprintf("Bearer %v", PAT_TOKEN),
 	}
 
 	var conf = config.Config{
