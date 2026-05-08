@@ -2,13 +2,11 @@
     <h1>{{.CollectionName}}</h1>
     <div>
         <h3>{{.Requests.Name}}</h3>
-
         <div>
             <h1>Method: {{.Requests.Method}}</h1>
         </div>
         <h1>
-            <strong>URL(Mandatory)<br/>
-            </strong>
+            <strong>URL(Mandatory)<br/></strong>
         </h1>
         <table class="relative-table wrapped" style="width: 560.0px;">
             <colgroup>
@@ -35,45 +33,49 @@
             <tr>
                 <td style="text-align: left;">Close</td>
                 <td style="text-align: left;">
-        <span style="color: rgb(33,33,33);">
-          <a href="{{.Requests.URL}}">"{{.Requests.URL}}"</a>
-        </span>
+                    <span style="color: rgb(33,33,33);">
+                        <a href="{{.Requests.URL}}">"{{.Requests.URL}}"</a>
+                    </span>
                 </td>
             </tr>
             </tbody>
         </table>
         <div>
-         <!-- headers -->
+            <!-- headers -->
         </div>
+        
         {{if .Requests.Headers}}
         <div>
             <h1>Headers</h1>
-        <table class="relative-table wrapped" style="width: 560.0px;">
-            <colgroup>
-                <col style="width: 0.0px;"/>
-                <col style="width: 0.0px;"/>
-            </colgroup>
-            <thead>
-            <tr>
-                <th style="text-align: left;">
-                    <p>Key</p>
-                </th>
-                <th style="text-align: left;">
-                    <p>Value</p>
-                </th>
-            </tr>
-            </thead>
-            <tbody>
-            {{range .Requests.Headers}}{{.Key}}: {{.Value}}
-            <tr>
-                <td style="text-align: left;">{{.Key}}</td>
-                <td style="text-align: left;">
-                    {{.Value}}
-                </td>
-            </tr>
-            {{end}}
-            </tbody>
-        </table>
+            <table class="relative-table wrapped" style="width: 560.0px;">
+                <colgroup>
+                    <col style="width: 0.0px;"/>
+                    <col style="width: 0.0px;"/>
+                </colgroup>
+                <thead>
+                <tr>
+                    <th style="text-align: left;">
+                        <p>Key</p>
+                    </th>
+                    <th style="text-align: left;">
+                        <p>Value</p>
+                    </th>
+                </tr>
+                </thead>
+                <tbody>
+                {{range .Requests.Headers}}
+                <tr>
+                    <td style="text-align: left;">{{.Key}}</td>
+                    <td style="text-align: left;">
+                        {{.Value}}
+                    </td>
+                </tr>
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{end}}  <!-- This was missing -->
+        
         {{if .Requests.BodyFields}}
         <div>
             <span>Request Body Fields:</span>

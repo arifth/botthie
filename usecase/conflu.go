@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/arifth/botthie/config"
 	"github.com/arifth/botthie/model"
+	"github.com/arifth/botthie/util"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -19,12 +19,11 @@ type ListSuccess struct {
 func (Usecase) PostBulkToConfluence(collection model.PostmanCollection, templ string, uc *Usecase) (ListSuccess, error) {
 	// iterate over collection item
 	//TODO : flatten the array
-	time := time.Now()
 
 	// post parent conflu page
 	bodyReq := model.ConfluencePage{
 		Type:      "page",
-		Title:     "F105" + collection.Info.Name + time.String(),
+		Title:     "F105" + collection.Info.Name + "  " + util.GenerateRandomChars(),
 		Ancestors: []model.Ancestor{{ID: os.Getenv("PARENT_ID")}},
 		Space:     model.Space{Key: os.Getenv("SPACE_KEY")},
 		Body: model.BodyWrapper{
@@ -58,7 +57,7 @@ func (Usecase) PostBulkToConfluence(collection model.PostmanCollection, templ st
 
 		bodyReq := model.ConfluencePage{
 			Type:      "page",
-			Title:     item.Name + time.String(),
+			Title:     item.Name + " " + util.GenerateRandomChars(),
 			Ancestors: []model.Ancestor{{ID: parentID}},
 			Space:     model.Space{Key: os.Getenv("SPACE_KEY")},
 			Body: model.BodyWrapper{
